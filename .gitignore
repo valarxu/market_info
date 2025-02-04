@@ -1,0 +1,16 @@
+# 依赖
+node_modules/
+
+# 环境变量
+.env
+
+# 日志
+*.log
+
+# IDE配置
+.vscode/
+.idea/
+
+# 操作系统文件
+.DS_Store
+Thumbs.db 

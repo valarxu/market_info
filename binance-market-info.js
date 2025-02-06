@@ -1,21 +1,24 @@
 const axios = require('axios');
-const { HttpsProxyAgent } = require('https-proxy-agent');
+const TelegramBot = require('node-telegram-bot-api');
+const cron = require('node-cron');
 require('dotenv').config();
 
 // 币安合约API的基础URL
 const BINANCE_FAPI_BASE = 'https://fapi.binance.com';
 
-// 从环境变量中读取代理配置
-const proxyConfig = {
-    host: process.env.PROXY_HOST || '127.0.0.1',
-    port: process.env.PROXY_PORT || 4780
-};
-
-// 创建带有代理的axios实例
+// 创建axios实例
 const axiosInstance = axios.create({
-    httpsAgent: new HttpsProxyAgent(`http://${proxyConfig.host}:${proxyConfig.port}`),
     timeout: 10000
 });
+
+// 添加 Telegram 配置
+const telegramConfig = {
+    token: process.env.TELEGRAM_BOT_TOKEN,
+    chatId: process.env.TELEGRAM_CHAT_ID
+};
+
+// 创建 Telegram 机器人实例
+const bot = new TelegramBot(telegramConfig.token);
 
 // 延时函数
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -111,6 +114,7 @@ function formatNumber(num, decimals = 2) {
 // 主函数
 async function getMarketInfo() {
     try {
+        let alertMessages = [];
         console.log('正在获取市场信息...\n');
 
         // 1. 获取所有活跃合约
@@ -129,8 +133,12 @@ async function getMarketInfo() {
         console.log('正在获取详细市场数据...\n');
 
         // 4. 打印表头
-        console.log('交易对         24h成交量    持仓价值      未平仓合约    多空比    费率      下次费率时间');
-        console.log('--------------------------------------------------------------------------------');
+        const tableHeader = '交易对         24h成交量    持仓价值      未平仓合约    多空比    费率      下次费率时间';
+        const tableDivider = '--------------------------------------------------------------------------------';
+        console.log(tableHeader);
+        console.log(tableDivider);
+        
+        let outputText = `${tableHeader}\n${tableDivider}\n`;
 
         // 5. 分批处理
         const batchSize = 5;
@@ -143,22 +151,34 @@ async function getMarketInfo() {
                 const longShortRatio = await getLongShortRatio(symbolName);
 
                 if (fundingInfo && openInterest) {
-                    const volume = formatNumber(volume24h[symbolName]);
-                    const marketValue = formatNumber(openInterest * fundingInfo.markPrice);
-                    const openInterestFormatted = formatNumber(openInterest);
-                    const fundingRate = (fundingInfo.lastFundingRate * 100).toFixed(4);
-                    const nextFunding = fundingInfo.nextFundingTime.toLocaleTimeString();
-                    const ratio = longShortRatio ? longShortRatio.toFixed(2) : 'N/A';
+                    const volume = volume24h[symbolName];
+                    const marketValue = openInterest * fundingInfo.markPrice;
+                    const marketToVolumeRatio = marketValue / volume;
+                    const fundingRateValue = fundingInfo.lastFundingRate * 100;
 
-                    console.log(
-                        `${symbolName.padEnd(14)} ` +
-                        `${volume.padEnd(12)} ` +
-                        `${marketValue.padEnd(12)} ` +
-                        `${openInterestFormatted.padEnd(12)} ` +
-                        `${ratio.padEnd(9)} ` +
-                        `${fundingRate.padEnd(9)}% ` +
-                        `${nextFunding}`
-                    );
+                    // 检查异常条件
+                    if (marketToVolumeRatio < 0.5 || marketToVolumeRatio > 2) {
+                        alertMessages.push(
+                            `⚠️ ${symbolName} 持仓价值/交易量比率异常: ${marketToVolumeRatio.toFixed(2)}`
+                        );
+                    }
+
+                    if (fundingRateValue > 0.1 || fundingRateValue < -0.1) {
+                        alertMessages.push(
+                            `💰 ${symbolName} 资金费率异常: ${fundingRateValue.toFixed(4)}%`
+                        );
+                    }
+
+                    const outputLine = `${symbolName.padEnd(14)} ` +
+                        `${formatNumber(volume).padEnd(12)} ` +
+                        `${formatNumber(marketValue).padEnd(12)} ` +
+                        `${formatNumber(openInterest).padEnd(12)} ` +
+                        `${(longShortRatio ? longShortRatio.toFixed(2) : 'N/A').padEnd(9)} ` +
+                        `${fundingRateValue.toFixed(4).padEnd(9)}% ` +
+                        `${fundingInfo.nextFundingTime.toLocaleTimeString()}`;
+
+                    console.log(outputLine);
+                    outputText += outputLine + '\n';
                 }
             });
 
@@ -168,13 +188,39 @@ async function getMarketInfo() {
             }
         }
 
+        // 如果有异常情况，发送到Telegram
+        if (alertMessages.length > 0) {
+            const message = `🚨 币安合约市场异常提醒\n\n${alertMessages.join('\n')}\n\n详细数据：\n${outputText}`;
+            await sendTelegramMessage(message);
+        }
+
     } catch (error) {
         console.error('程序执行出错:', error.message);
+        await sendTelegramMessage(`❌ 程序执行出错: ${error.message}`);
     }
 }
 
-// 执行程序
-console.log('开始获取币安合约市场数据...\n');
+// 添加发送Telegram消息的函数
+async function sendTelegramMessage(message) {
+    try {
+        await bot.sendMessage(telegramConfig.chatId, message);
+    } catch (error) {
+        console.error('发送Telegram消息失败:', error.message);
+    }
+}
+
+// 设置定时任务
+function setupCronJobs() {
+    // 每天的2点，6点，10点，14点，18点，22点执行
+    cron.schedule('0 2,6,10,14,18,22 * * *', async () => {
+        console.log('开始定时任务...');
+        await getMarketInfo();
+    });
+}
+
+// 修改程序入口
+console.log('启动币安合约市场监控程序...\n');
+setupCronJobs();
 getMarketInfo().then(() => {
-    console.log('\n数据获取完成！');
+    console.log('\n初始化数据获取完成！');
 }); 

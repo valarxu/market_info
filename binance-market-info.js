@@ -191,6 +191,7 @@ async function getMarketInfo() {
         // 如果有异常情况，发送到Telegram
         if (alertMessages.length > 0) {
             const message = `🚨 币安合约市场异常提醒\n\n${alertMessages.join('\n')}\n\n详细数据：\n${outputText}`;
+            console.log(message)
             await sendTelegramMessage(message);
         }
 

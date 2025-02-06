@@ -157,7 +157,7 @@ async function getMarketInfo() {
                     const fundingRateValue = fundingInfo.lastFundingRate * 100;
 
                     // 检查异常条件
-                    if (marketToVolumeRatio < 0.5 || marketToVolumeRatio > 2) {
+                    if (marketToVolumeRatio < 0.2 || marketToVolumeRatio > 1) {
                         alertMessages.push(
                             `⚠️ ${symbolName} 持仓价值/交易量比率异常: ${marketToVolumeRatio.toFixed(2)}`
                         );
@@ -190,8 +190,12 @@ async function getMarketInfo() {
 
         // 如果有异常情况，发送到Telegram
         if (alertMessages.length > 0) {
-            const message = `🚨 币安合约市场异常提醒\n\n${alertMessages.join('\n')}\n\n详细数据：\n${outputText}`;
-            console.log(message)
+            // 只发送异常信息，不包含完整的市场数据
+            const message = `🚨 币安合约市场异常提醒\n\n${alertMessages.join('\n')}`;
+            console.log('\n检测到以下异常情况：');
+            console.log('----------------------------------------');
+            console.log(message);
+            console.log('----------------------------------------\n');
             await sendTelegramMessage(message);
         }
 
@@ -201,10 +205,30 @@ async function getMarketInfo() {
     }
 }
 
-// 添加发送Telegram消息的函数
+// 修改发送Telegram消息的函数
 async function sendTelegramMessage(message) {
     try {
-        await bot.sendMessage(telegramConfig.chatId, message);
+        // 如果消息长度超过4000字符，分开发送
+        if (message.length > 4000) {
+            // 如果是异常提醒消息，分开发送异常信息和详细数据
+            if (message.includes('币安合约市场异常提醒')) {
+                const [alertPart, detailPart] = message.split('\n\n详细数据：\n');
+                
+                // 先发送异常提醒
+                await bot.sendMessage(telegramConfig.chatId, alertPart);
+                
+                // 如果需要，可以选择性地发送详细数据
+                if (detailPart) {
+                    await sleep(1000); // 等待1秒再发送第二条消息
+                    await bot.sendMessage(telegramConfig.chatId, '📊 详细市场数据：\n' + detailPart.slice(0, 4000));
+                }
+            } else {
+                // 对于其他长消息，直接截断
+                await bot.sendMessage(telegramConfig.chatId, message.slice(0, 4000));
+            }
+        } else {
+            await bot.sendMessage(telegramConfig.chatId, message);
+        }
     } catch (error) {
         console.error('发送Telegram消息失败:', error.message);
     }

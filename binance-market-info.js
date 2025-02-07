@@ -114,7 +114,9 @@ function formatNumber(num, decimals = 2) {
 // 主函数
 async function getMarketInfo() {
     try {
-        let alertMessages = [];
+        let ratioAlertMessages = [];    // 持仓价值/交易量比率异常
+        let fundingAlertMessages = [];   // 资金费率异常
+        let longShortAlertMessages = []; // 多空比异常
         console.log('正在获取市场信息...\n');
 
         // 1. 获取所有活跃合约
@@ -156,16 +158,24 @@ async function getMarketInfo() {
                     const marketToVolumeRatio = marketValue / volume;
                     const fundingRateValue = fundingInfo.lastFundingRate * 100;
 
-                    // 检查异常条件
-                    if (marketToVolumeRatio < 0.2 || marketToVolumeRatio > 1) {
-                        alertMessages.push(
+                    // 检查持仓价值/交易量比率异常
+                    if (marketToVolumeRatio > 0.5) {
+                        ratioAlertMessages.push(
                             `⚠️ ${symbolName} 持仓价值/交易量比率异常: ${marketToVolumeRatio.toFixed(2)}`
                         );
                     }
 
+                    // 检查资金费率异常
                     if (fundingRateValue > 0.1 || fundingRateValue < -0.1) {
-                        alertMessages.push(
+                        fundingAlertMessages.push(
                             `💰 ${symbolName} 资金费率异常: ${fundingRateValue.toFixed(4)}%`
+                        );
+                    }
+
+                    // 检查多空比异常
+                    if (longShortRatio && (longShortRatio < 0.75 || longShortRatio > 2.5)) {
+                        longShortAlertMessages.push(
+                            `📊 ${symbolName} 多空比异常: ${longShortRatio.toFixed(2)}`
                         );
                     }
 
@@ -188,15 +198,34 @@ async function getMarketInfo() {
             }
         }
 
-        // 如果有异常情况，发送到Telegram
-        if (alertMessages.length > 0) {
-            // 只发送异常信息，不包含完整的市场数据
-            const message = `🚨 币安合约市场异常提醒\n\n${alertMessages.join('\n')}`;
-            console.log('\n检测到以下异常情况：');
+        // 发送持仓价值/交易量比率异常
+        if (ratioAlertMessages.length > 0) {
+            const ratioMessage = `🚨 持仓价值/交易量比率异常提醒\n\n${ratioAlertMessages.join('\n')}`;
+            console.log('\n检测到以下持仓比率异常：');
             console.log('----------------------------------------');
-            console.log(message);
+            console.log(ratioMessage);
             console.log('----------------------------------------\n');
-            await sendTelegramMessage(message);
+            await sendTelegramMessage(ratioMessage);
+        }
+
+        // 发送资金费率异常
+        if (fundingAlertMessages.length > 0) {
+            const fundingMessage = `💰 资金费率异常提醒\n\n${fundingAlertMessages.join('\n')}`;
+            console.log('\n检测到以下资金费率异常：');
+            console.log('----------------------------------------');
+            console.log(fundingMessage);
+            console.log('----------------------------------------\n');
+            await sendTelegramMessage(fundingMessage);
+        }
+
+        // 发送多空比异常
+        if (longShortAlertMessages.length > 0) {
+            const longShortMessage = `📊 多空比异常提醒\n\n${longShortAlertMessages.join('\n')}`;
+            console.log('\n检测到以下多空比异常：');
+            console.log('----------------------------------------');
+            console.log(longShortMessage);
+            console.log('----------------------------------------\n');
+            await sendTelegramMessage(longShortMessage);
         }
 
     } catch (error) {
@@ -210,20 +239,14 @@ async function sendTelegramMessage(message) {
     try {
         // 如果消息长度超过4000字符，分开发送
         if (message.length > 4000) {
-            // 如果是异常提醒消息，分开发送异常信息和详细数据
-            if (message.includes('币安合约市场异常提醒')) {
-                const [alertPart, detailPart] = message.split('\n\n详细数据：\n');
-                
-                // 先发送异常提醒
-                await bot.sendMessage(telegramConfig.chatId, alertPart);
-                
-                // 如果需要，可以选择性地发送详细数据
-                if (detailPart) {
-                    await sleep(1000); // 等待1秒再发送第二条消息
-                    await bot.sendMessage(telegramConfig.chatId, '📊 详细市场数据：\n' + detailPart.slice(0, 4000));
-                }
+            // 根据不同类型的消息处理
+            if (message.includes('🚨 持仓价值/交易量比率异常提醒') || 
+                message.includes('💰 资金费率异常提醒') || 
+                message.includes('📊 多空比异常提醒')) {
+                // 直接发送前4000个字符
+                await bot.sendMessage(telegramConfig.chatId, message.slice(0, 4000));
             } else {
-                // 对于其他长消息，直接截断
+                // 对于其他类型的长消息，直接截断
                 await bot.sendMessage(telegramConfig.chatId, message.slice(0, 4000));
             }
         } else {

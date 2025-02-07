@@ -173,7 +173,7 @@ async function getMarketInfo() {
                     }
 
                     // 检查多空比异常
-                    if (longShortRatio && (longShortRatio < 0.75 || longShortRatio > 2.5)) {
+                    if (longShortRatio && (longShortRatio < 0.75 || longShortRatio > 3)) {
                         longShortAlertMessages.push(
                             `📊 ${symbolName} 多空比异常: ${longShortRatio.toFixed(2)}`
                         );

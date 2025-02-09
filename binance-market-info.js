@@ -157,9 +157,10 @@ async function getMarketInfo() {
         // 2. 获取24小时成交量
         const volume24h = await get24hVolume();
 
-        // 3. 筛选交易量大于100M的交易对
+        // 3. 筛选交易量大于100M的交易对，忽略USDC交易对
         const highVolumeSymbols = activeSymbols.filter(symbol => 
-            (volume24h[symbol.symbol] || 0) > 100000000
+            (volume24h[symbol.symbol] || 0) > 100000000 && 
+            !symbol.symbol.includes('USDC')  // 添加这个条件来忽略USDC交易对
         ).sort((a, b) => (volume24h[b.symbol] || 0) - (volume24h[a.symbol] || 0));
 
         console.log(`找到 ${highVolumeSymbols.length} 个交易量超过100M的合约\n`);
@@ -213,7 +214,7 @@ async function getMarketInfo() {
                     }
 
                     // 检查K线涨跌幅异常
-                    if (klineData && Math.abs(klineData.priceChange) > 10) {
+                    if (klineData && Math.abs(klineData.priceChange) > 3) {
                         priceAlertMessages.push(
                             `📈 ${symbolName} 4小时K线涨跌幅异常: ${klineData.priceChange.toFixed(2)}% ` +
                             `(开盘: ${klineData.openPrice.toFixed(4)}, 当前: ${klineData.closePrice.toFixed(4)})`

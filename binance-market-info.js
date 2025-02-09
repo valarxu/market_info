@@ -159,7 +159,7 @@ async function getMarketInfo() {
                     const fundingRateValue = fundingInfo.lastFundingRate * 100;
 
                     // 检查持仓价值/交易量比率异常
-                    if (marketToVolumeRatio > 0.3) {
+                    if (marketToVolumeRatio > 0.5) {
                         ratioAlertMessages.push(
                             `⚠️ ${symbolName} 异常: ${marketToVolumeRatio.toFixed(2)} ` +
                             `(持仓价值: ${formatNumber(marketValue)}，24h成交量: ${formatNumber(volume)})`

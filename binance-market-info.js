@@ -99,6 +99,36 @@ async function getLongShortRatio(symbol) {
     }
 }
 
+// 添加获取K线数据的函数
+async function getKlineData(symbol) {
+    try {
+        const response = await axiosInstance.get(`${BINANCE_FAPI_BASE}/fapi/v1/klines`, {
+            params: {
+                symbol: symbol,
+                interval: '4h',
+                limit: 1
+            }
+        });
+        
+        if (response.data && response.data.length > 0) {
+            const kline = response.data[0];
+            const openPrice = parseFloat(kline[1]);
+            const closePrice = parseFloat(kline[4]);
+            const priceChange = ((closePrice - openPrice) / openPrice) * 100;
+            
+            return {
+                priceChange,
+                openPrice,
+                closePrice
+            };
+        }
+        return null;
+    } catch (error) {
+        console.error(`获取${symbol} K线数据失败:`, error.message);
+        return null;
+    }
+}
+
 // 格式化数字
 function formatNumber(num, decimals = 2) {
     if (num >= 1000000000) {
@@ -117,6 +147,7 @@ async function getMarketInfo() {
         let ratioAlertMessages = [];    // 持仓价值/交易量比率异常
         let fundingAlertMessages = [];   // 资金费率异常
         let longShortAlertMessages = []; // 多空比异常
+        let priceAlertMessages = [];     // 价格涨跌幅异常
         console.log('正在获取市场信息...\n');
 
         // 1. 获取所有活跃合约
@@ -157,6 +188,15 @@ async function getMarketInfo() {
                     const marketValue = openInterest * fundingInfo.markPrice;
                     const marketToVolumeRatio = marketValue / volume;
                     const fundingRateValue = fundingInfo.lastFundingRate * 100;
+
+                    // 获取K线数据并检查涨跌幅
+                    const klineData = await getKlineData(symbolName);
+                    if (klineData && Math.abs(klineData.priceChange) > 10) {
+                        priceAlertMessages.push(
+                            `📈 ${symbolName} 4小时K线涨跌幅异常: ${klineData.priceChange.toFixed(2)}% ` +
+                            `(开盘: ${klineData.openPrice.toFixed(4)}, 当前: ${klineData.closePrice.toFixed(4)})`
+                        );
+                    }
 
                     // 检查持仓价值/交易量比率异常
                     if (marketToVolumeRatio > 0.5) {
@@ -229,6 +269,16 @@ async function getMarketInfo() {
             await sendTelegramMessage(longShortMessage);
         }
 
+        // 发送价格涨跌幅异常
+        if (priceAlertMessages.length > 0) {
+            const priceMessage = `📈 价格剧烈波动提醒\n\n${priceAlertMessages.join('\n')}`;
+            console.log('\n检测到以下价格异常：');
+            console.log('----------------------------------------');
+            console.log(priceMessage);
+            console.log('----------------------------------------\n');
+            await sendTelegramMessage(priceMessage);
+        }
+
     } catch (error) {
         console.error('程序执行出错:', error.message);
         await sendTelegramMessage(`❌ 程序执行出错: ${error.message}`);
@@ -238,16 +288,13 @@ async function getMarketInfo() {
 // 修改发送Telegram消息的函数
 async function sendTelegramMessage(message) {
     try {
-        // 如果消息长度超过4000字符，分开发送
         if (message.length > 4000) {
-            // 根据不同类型的消息处理
             if (message.includes('🚨 持仓价值/交易量比率异常提醒') || 
                 message.includes('💰 资金费率异常提醒') || 
-                message.includes('📊 多空比异常提醒')) {
-                // 直接发送前4000个字符
+                message.includes('📊 多空比异常提醒') ||
+                message.includes('📈 价格剧烈波动提醒')) {
                 await bot.sendMessage(telegramConfig.chatId, message.slice(0, 4000));
             } else {
-                // 对于其他类型的长消息，直接截断
                 await bot.sendMessage(telegramConfig.chatId, message.slice(0, 4000));
             }
         } else {

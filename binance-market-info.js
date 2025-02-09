@@ -214,9 +214,9 @@ async function getMarketInfo() {
                     }
 
                     // 检查K线涨跌幅异常
-                    if (klineData && Math.abs(klineData.priceChange) > 3) {
+                    if (klineData && Math.abs(klineData.priceChange) > 10) {
                         priceAlertMessages.push(
-                            `📈 ${symbolName} 4小时K线涨跌幅异常: ${klineData.priceChange.toFixed(2)}% ` +
+                            `📈 ${symbolName} 4小时k线: ${klineData.priceChange.toFixed(2)}% ` +
                             `(开盘: ${klineData.openPrice.toFixed(4)}, 当前: ${klineData.closePrice.toFixed(4)})`
                         );
                     }
@@ -306,10 +306,10 @@ async function sendTelegramMessage(message) {
     }
 }
 
-// 设置定时任务
+// 修改定时任务
 function setupCronJobs() {
-    // 每天的2点，6点，10点，14点，18点，22点执行
-    cron.schedule('0 2,6,10,14,18,22 * * *', async () => {
+    // 每天的03:50，07:50，11:50，15:50，19:50，23:50执行
+    cron.schedule('50 3,7,11,15,19,23 * * *', async () => {
         console.log('开始定时任务...');
         await getMarketInfo();
     });

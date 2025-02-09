@@ -182,21 +182,13 @@ async function getMarketInfo() {
                 const fundingInfo = await getFundingRate(symbolName);
                 const openInterest = await getOpenInterest(symbolName);
                 const longShortRatio = await getLongShortRatio(symbolName);
+                const klineData = await getKlineData(symbolName);
 
                 if (fundingInfo && openInterest) {
                     const volume = volume24h[symbolName];
                     const marketValue = openInterest * fundingInfo.markPrice;
                     const marketToVolumeRatio = marketValue / volume;
                     const fundingRateValue = fundingInfo.lastFundingRate * 100;
-
-                    // 获取K线数据并检查涨跌幅
-                    const klineData = await getKlineData(symbolName);
-                    if (klineData && Math.abs(klineData.priceChange) > 10) {
-                        priceAlertMessages.push(
-                            `📈 ${symbolName} 4小时K线涨跌幅异常: ${klineData.priceChange.toFixed(2)}% ` +
-                            `(开盘: ${klineData.openPrice.toFixed(4)}, 当前: ${klineData.closePrice.toFixed(4)})`
-                        );
-                    }
 
                     // 检查持仓价值/交易量比率异常
                     if (marketToVolumeRatio > 0.5) {
@@ -217,6 +209,14 @@ async function getMarketInfo() {
                     if (longShortRatio && (longShortRatio < 0.75 || longShortRatio > 3)) {
                         longShortAlertMessages.push(
                             `📊 ${symbolName} 多空比异常: ${longShortRatio.toFixed(2)}`
+                        );
+                    }
+
+                    // 检查K线涨跌幅异常
+                    if (klineData && Math.abs(klineData.priceChange) > 10) {
+                        priceAlertMessages.push(
+                            `📈 ${symbolName} 4小时K线涨跌幅异常: ${klineData.priceChange.toFixed(2)}% ` +
+                            `(开盘: ${klineData.openPrice.toFixed(4)}, 当前: ${klineData.closePrice.toFixed(4)})`
                         );
                     }
 

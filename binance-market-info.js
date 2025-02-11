@@ -194,7 +194,7 @@ async function getMarketInfo() {
                     // 检查持仓价值/交易量比率异常
                     if (marketToVolumeRatio > 0.5) {
                         ratioAlertMessages.push(
-                            `⚠️ ${symbolName} 异常: ${marketToVolumeRatio.toFixed(2)} ` +
+                            `⚠️ ${symbolName} : ${marketToVolumeRatio.toFixed(2)} ` +
                             `(持仓价值: ${formatNumber(marketValue)}，24h成交量: ${formatNumber(volume)})`
                         );
                     }
@@ -202,14 +202,14 @@ async function getMarketInfo() {
                     // 检查资金费率异常
                     if (fundingRateValue > 0.1 || fundingRateValue < -0.1) {
                         fundingAlertMessages.push(
-                            `💰 ${symbolName} 资金费率异常: ${fundingRateValue.toFixed(4)}%`
+                            `💰 ${symbolName} : ${fundingRateValue.toFixed(4)}%`
                         );
                     }
 
                     // 检查多空比异常
                     if (longShortRatio && (longShortRatio < 0.75 || longShortRatio > 3)) {
                         longShortAlertMessages.push(
-                            `📊 ${symbolName} 多空比异常: ${longShortRatio.toFixed(2)}`
+                            `📊 ${symbolName} : ${longShortRatio.toFixed(2)}`
                         );
                     }
 

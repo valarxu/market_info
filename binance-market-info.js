@@ -207,7 +207,7 @@ async function getMarketInfo() {
                     }
 
                     // 检查多空比异常
-                    if (longShortRatio && (longShortRatio < 0.75 || longShortRatio > 3)) {
+                    if (longShortRatio && (longShortRatio < 0.5 || longShortRatio > 3.5)) {
                         longShortAlertMessages.push(
                             `📊 ${symbolName} : ${longShortRatio.toFixed(2)}`
                         );
@@ -242,7 +242,7 @@ async function getMarketInfo() {
 
         // 发送持仓价值/交易量比率异常
         if (ratioAlertMessages.length > 0) {
-            const ratioMessage = `🚨 持仓价值/交易量比率异常提醒\n\n${ratioAlertMessages.join('\n')}`;
+            const ratioMessage = `🚨 持仓价值/交易量比率异常提醒 >0.5\n\n${ratioAlertMessages.join('\n')}`;
             console.log('\n检测到以下持仓比率异常：');
             console.log('----------------------------------------');
             console.log(ratioMessage);
@@ -252,7 +252,7 @@ async function getMarketInfo() {
 
         // 发送资金费率异常
         if (fundingAlertMessages.length > 0) {
-            const fundingMessage = `💰 资金费率异常提醒\n\n${fundingAlertMessages.join('\n')}`;
+            const fundingMessage = `💰 资金费率异常提醒 >0.1% <-0.1%\n\n${fundingAlertMessages.join('\n')}`;
             console.log('\n检测到以下资金费率异常：');
             console.log('----------------------------------------');
             console.log(fundingMessage);
@@ -262,7 +262,7 @@ async function getMarketInfo() {
 
         // 发送多空比异常
         if (longShortAlertMessages.length > 0) {
-            const longShortMessage = `📊 多空比异常提醒\n\n${longShortAlertMessages.join('\n')}`;
+            const longShortMessage = `📊 多空比异常提醒 <0.5 >3.5\n\n${longShortAlertMessages.join('\n')}`;
             console.log('\n检测到以下多空比异常：');
             console.log('----------------------------------------');
             console.log(longShortMessage);
@@ -272,7 +272,7 @@ async function getMarketInfo() {
 
         // 发送价格涨跌幅异常
         if (priceAlertMessages.length > 0) {
-            const priceMessage = `📈 价格剧烈波动提醒\n\n${priceAlertMessages.join('\n')}`;
+            const priceMessage = `📈 价格剧烈波动提醒 >10%\n\n${priceAlertMessages.join('\n')}`;
             console.log('\n检测到以下价格异常：');
             console.log('----------------------------------------');
             console.log(priceMessage);

@@ -71,19 +71,6 @@ async function getActiveSymbols() {
     }
 }
 
-// 获取24小时成交量数据
-async function get24hVolume(instId) {
-    try {
-        const response = await axiosInstance.get('/api/v5/market/ticker', {
-            params: { instId }
-        });
-        return parseFloat(response.data.data[0].volCcy24h);
-    } catch (error) {
-        console.error(`获取${instId}成交量数据失败:`, error.message);
-        return 0;
-    }
-}
-
 // 获取资金费率信息
 async function getFundingRate(instId) {
     try {
@@ -102,77 +89,6 @@ async function getFundingRate(instId) {
     }
 }
 
-// 获取未平仓合约信息
-async function getOpenInterest(instId) {
-    try {
-        const response = await axiosInstance.get('/api/v5/public/open-interest', {
-            params: { instId }
-        });
-        return parseFloat(response.data.data[0].oi);
-    } catch (error) {
-        console.error(`获取${instId}未平仓合约数据失败:`, error.message);
-        return null;
-    }
-}
-
-// 获取多空持仓人数比
-async function getLongShortRatio(instId) {
-    try {
-        const response = await axiosInstance.get('/api/v5/public/long-short-ratio', {
-            params: { 
-                instId,
-                period: '5m'
-            }
-        });
-        return parseFloat(response.data.data[0].longShortRatio);
-    } catch (error) {
-        console.error(`获取${instId}多空比数据失败:`, error.message);
-        return null;
-    }
-}
-
-// 获取K线数据
-async function getKlineData(instId) {
-    try {
-        const response = await axiosInstance.get('/api/v5/market/candles', {
-            params: {
-                instId,
-                bar: '4H',
-                limit: 1
-            }
-        });
-        
-        if (response.data.data && response.data.data.length > 0) {
-            const kline = response.data.data[0];
-            const openPrice = parseFloat(kline[1]);
-            const closePrice = parseFloat(kline[4]);
-            const priceChange = ((closePrice - openPrice) / openPrice) * 100;
-            
-            return {
-                priceChange,
-                openPrice,
-                closePrice
-            };
-        }
-        return null;
-    } catch (error) {
-        console.error(`获取${instId} K线数据失败:`, error.message);
-        return null;
-    }
-}
-
-// 格式化数字
-function formatNumber(num, decimals = 2) {
-    if (num >= 1000000000) {
-        return (num / 1000000000).toFixed(decimals) + 'B';
-    } else if (num >= 1000000) {
-        return (num / 1000000).toFixed(decimals) + 'M';
-    } else if (num >= 1000) {
-        return (num / 1000).toFixed(decimals) + 'K';
-    }
-    return num.toFixed(decimals);
-}
-
 // 发送Telegram消息
 async function sendTelegramMessage(message) {
     try {
@@ -189,112 +105,46 @@ async function sendTelegramMessage(message) {
 // 主函数
 async function getMarketInfo() {
     try {
-        let ratioAlertMessages = [];
         let fundingAlertMessages = [];
-        let longShortAlertMessages = [];
-        let priceAlertMessages = [];
-        console.log('正在获取OKX市场信息...\n');
+        console.log('正在获取OKX资金费率信息...\n');
 
         // 1. 获取所有活跃合约
         const activeSymbols = await getActiveSymbols();
         console.log(`获取到 ${activeSymbols.length} 个活跃合约\n`);
 
-        // 2. 获取并筛选高成交量的合约
-        const highVolumeSymbols = [];
-        for (const symbol of activeSymbols) {
-            const volume = await get24hVolume(symbol.instId);
-            if (volume > 100000000 && !symbol.instId.includes('USDC')) {
-                highVolumeSymbols.push({...symbol, volume});
-            }
-            await sleep(100); // 添加延迟避免触发频率限制
-        }
-
-        // 按成交量排序
-        highVolumeSymbols.sort((a, b) => b.volume - a.volume);
-
-        console.log(`找到 ${highVolumeSymbols.length} 个交易量超过100M的合约\n`);
-        console.log('正在获取详细市场数据...\n');
-
-        // 3. 打印表头
-        const tableHeader = '交易对         24h成交量    持仓价值      未平仓合约    多空比    费率      下次费率时间';
-        const tableDivider = '--------------------------------------------------------------------------------';
-        console.log(tableHeader);
-        console.log(tableDivider);
-
-        // 4. 分批处理
+        // 2. 分批处理
         const batchSize = 5;
-        for (let i = 0; i < highVolumeSymbols.length; i += batchSize) {
-            const batch = highVolumeSymbols.slice(i, i + batchSize);
+        for (let i = 0; i < activeSymbols.length; i += batchSize) {
+            const batch = activeSymbols.slice(i, i + batchSize);
             const promises = batch.map(async (symbol) => {
                 const fundingInfo = await getFundingRate(symbol.instId);
-                const openInterest = await getOpenInterest(symbol.instId);
-                const longShortRatio = await getLongShortRatio(symbol.instId);
-                const klineData = await getKlineData(symbol.instId);
 
-                if (fundingInfo && openInterest) {
-                    const marketValue = openInterest * fundingInfo.markPrice;
-                    const marketToVolumeRatio = marketValue / symbol.volume;
+                if (fundingInfo) {
                     const fundingRateValue = fundingInfo.lastFundingRate * 100;
 
-                    // 检查各种异常情况并添加到提醒列表
-                    if (marketToVolumeRatio > 0.5) {
-                        ratioAlertMessages.push(
-                            `⚠️ ${symbol.instId} : ${marketToVolumeRatio.toFixed(2)} ` +
-                            `(持仓价值: ${formatNumber(marketValue)}，24h成交量: ${formatNumber(symbol.volume)})`
-                        );
-                    }
-
+                    // 检查资金费率异常
                     if (fundingRateValue > 0.1 || fundingRateValue < -0.1) {
-                        fundingAlertMessages.push(
-                            `💰 ${symbol.instId} : ${fundingRateValue.toFixed(4)}%`
-                        );
+                        const message = `💰 ${symbol.instId} : ${fundingRateValue.toFixed(4)}% (下次费率时间: ${fundingInfo.nextFundingTime.toLocaleTimeString()})`;
+                        console.log(message);
+                        fundingAlertMessages.push(message);
                     }
-
-                    if (longShortRatio && (longShortRatio < 0.5 || longShortRatio > 3.5)) {
-                        longShortAlertMessages.push(
-                            `📊 ${symbol.instId} : ${longShortRatio.toFixed(2)}`
-                        );
-                    }
-
-                    if (klineData && Math.abs(klineData.priceChange) > 10) {
-                        priceAlertMessages.push(
-                            `📈 ${symbol.instId} 4小时k线: ${klineData.priceChange.toFixed(2)}% ` +
-                            `(开盘: ${klineData.openPrice.toFixed(4)}, 当前: ${klineData.closePrice.toFixed(4)})`
-                        );
-                    }
-
-                    // 打印信息
-                    const outputLine = `${symbol.instId.padEnd(14)} ` +
-                        `${formatNumber(symbol.volume).padEnd(12)} ` +
-                        `${formatNumber(marketValue).padEnd(12)} ` +
-                        `${formatNumber(openInterest).padEnd(12)} ` +
-                        `${(longShortRatio ? longShortRatio.toFixed(2) : 'N/A').padEnd(9)} ` +
-                        `${fundingRateValue.toFixed(4).padEnd(9)}% ` +
-                        `${fundingInfo.nextFundingTime.toLocaleTimeString()}`;
-
-                    console.log(outputLine);
                 }
             });
 
             await Promise.all(promises);
-            await sleep(500);
+            await sleep(500); // 添加延迟避免触发频率限制
         }
 
-        // 5. 发送异常提醒
-        if (ratioAlertMessages.length > 0) {
-            await sendTelegramMessage(`🚨 OKX持仓价值/交易量比率异常提醒 >0.5\n\n${ratioAlertMessages.join('\n')}`);
-        }
-
+        // 3. 发送异常提醒
         if (fundingAlertMessages.length > 0) {
-            await sendTelegramMessage(`💰 OKX资金费率异常提醒 >0.1% <-0.1%\n\n${fundingAlertMessages.join('\n')}`);
-        }
-
-        if (longShortAlertMessages.length > 0) {
-            await sendTelegramMessage(`📊 OKX多空比异常提醒 <0.5 >3.5\n\n${longShortAlertMessages.join('\n')}`);
-        }
-
-        if (priceAlertMessages.length > 0) {
-            await sendTelegramMessage(`📈 OKX价格剧烈波动提醒 >10%\n\n${priceAlertMessages.join('\n')}`);
+            const message = `💰 OKX资金费率异常提醒 >0.1% <-0.1%\n\n${fundingAlertMessages.join('\n')}`;
+            console.log('\n检测到以下资金费率异常：');
+            console.log('----------------------------------------');
+            console.log(message);
+            console.log('----------------------------------------\n');
+            await sendTelegramMessage(message);
+        } else {
+            console.log('\n未检测到异常资金费率');
         }
 
     } catch (error) {
@@ -307,14 +157,14 @@ async function getMarketInfo() {
 function setupCronJobs() {
     // 每天的03:55，07:55，11:55，15:55，19:55，23:55执行
     cron.schedule('55 3,7,11,15,19,23 * * *', async () => {
-        console.log('开始OKX定时任务...');
+        console.log('开始OKX资金费率监控任务...');
         await getMarketInfo();
     });
 }
 
 // 程序入口
-console.log('启动OKX合约市场监控程序...\n');
+console.log('启动OKX资金费率监控程序...\n');
 setupCronJobs();
 getMarketInfo().then(() => {
     console.log('\n初始化数据获取完成！');
-}); 
+});

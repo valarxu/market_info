@@ -69,19 +69,6 @@ async function getFundingRate(symbol) {
     }
 }
 
-// 获取未平仓合约信息
-async function getOpenInterest(symbol) {
-    try {
-        const response = await axiosInstance.get(`${BINANCE_FAPI_BASE}/fapi/v1/openInterest`, {
-            params: { symbol }
-        });
-        return parseFloat(response.data.openInterest);
-    } catch (error) {
-        console.error(`获取${symbol}未平仓合约数据失败:`, error.message);
-        return null;
-    }
-}
-
 // 添加获取K线数据的函数
 async function getKlineData(symbol) {
     try {
@@ -127,7 +114,6 @@ function formatNumber(num, decimals = 2) {
 // 主函数
 async function getMarketInfo() {
     try {
-        let ratioAlertMessages = [];    // 持仓价值/交易量比率异常
         let fundingAlertMessages = [];   // 资金费率异常
         let priceAlertMessages = [];     // 价格涨跌幅异常
         console.log('正在获取市场信息...\n');
@@ -149,8 +135,8 @@ async function getMarketInfo() {
         console.log('正在获取详细市场数据...\n');
 
         // 4. 打印表头
-        const tableHeader = '交易对         24h成交量    持仓价值      未平仓合约    费率      下次费率时间';
-        const tableDivider = '------------------------------------------------------------------------';
+        const tableHeader = '交易对         24h成交量    费率      下次费率时间';
+        const tableDivider = '--------------------------------------------------------';
         console.log(tableHeader);
         console.log(tableDivider);
         
@@ -163,22 +149,11 @@ async function getMarketInfo() {
             const promises = batch.map(async (symbol) => {
                 const symbolName = symbol.symbol;
                 const fundingInfo = await getFundingRate(symbolName);
-                const openInterest = await getOpenInterest(symbolName);
                 const klineData = await getKlineData(symbolName);
 
-                if (fundingInfo && openInterest) {
+                if (fundingInfo) {
                     const volume = volume24h[symbolName];
-                    const marketValue = openInterest * fundingInfo.markPrice;
-                    const marketToVolumeRatio = marketValue / volume;
                     const fundingRateValue = fundingInfo.lastFundingRate * 100;
-
-                    // 检查持仓价值/交易量比率异常
-                    if (marketToVolumeRatio > 0.5) {
-                        ratioAlertMessages.push(
-                            `⚠️ ${symbolName} : ${marketToVolumeRatio.toFixed(2)} ` +
-                            `(持仓价值: ${formatNumber(marketValue)}，24h成交量: ${formatNumber(volume)})`
-                        );
-                    }
 
                     // 检查资金费率异常
                     if (fundingRateValue > 0.1 || fundingRateValue < -0.1) {
@@ -197,8 +172,6 @@ async function getMarketInfo() {
 
                     const outputLine = `${symbolName.padEnd(14)} ` +
                         `${formatNumber(volume).padEnd(12)} ` +
-                        `${formatNumber(marketValue).padEnd(12)} ` +
-                        `${formatNumber(openInterest).padEnd(12)} ` +
                         `${fundingRateValue.toFixed(4).padEnd(9)}% ` +
                         `${fundingInfo.nextFundingTime.toLocaleTimeString()}`;
 
@@ -211,16 +184,6 @@ async function getMarketInfo() {
             if (i + batchSize < highVolumeSymbols.length) {
                 await sleep(500);
             }
-        }
-
-        // 发送持仓价值/交易量比率异常
-        if (ratioAlertMessages.length > 0) {
-            const ratioMessage = `🚨 持仓价值/交易量比率异常提醒 >0.5\n\n${ratioAlertMessages.join('\n')}`;
-            console.log('\n检测到以下持仓比率异常：');
-            console.log('----------------------------------------');
-            console.log(ratioMessage);
-            console.log('----------------------------------------\n');
-            await sendTelegramMessage(ratioMessage);
         }
 
         // 发送资金费率异常
@@ -253,8 +216,7 @@ async function getMarketInfo() {
 async function sendTelegramMessage(message) {
     try {
         if (message.length > 4000) {
-            if (message.includes('🚨 持仓价值/交易量比率异常提醒') || 
-                message.includes('💰 资金费率异常提醒') || 
+            if (message.includes('💰 资金费率异常提醒') || 
                 message.includes('📈 价格剧烈波动提醒')) {
                 await bot.sendMessage(telegramConfig.chatId, message.slice(0, 4000));
             } else {

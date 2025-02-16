@@ -157,8 +157,10 @@ async function getMarketInfo() {
 
                     // 检查资金费率异常
                     if (fundingRateValue > 0.2 || fundingRateValue < -0.2) {
+                        // 提取币种名称，移除后缀
+                        const coinName = symbolName.replace(/USDT$/, '');
                         fundingAlertMessages.push(
-                            `💰 ${symbolName} : ${fundingRateValue.toFixed(4)}%`
+                            `💰 ${coinName} : ${fundingRateValue.toFixed(2)}%`
                         );
                     }
 

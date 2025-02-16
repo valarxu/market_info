@@ -156,7 +156,7 @@ async function getMarketInfo() {
                     const fundingRateValue = fundingInfo.lastFundingRate * 100;
 
                     // 检查资金费率异常
-                    if (fundingRateValue > 0.1 || fundingRateValue < -0.1) {
+                    if (fundingRateValue > 0.2 || fundingRateValue < -0.2) {
                         fundingAlertMessages.push(
                             `💰 ${symbolName} : ${fundingRateValue.toFixed(4)}%`
                         );
@@ -188,7 +188,7 @@ async function getMarketInfo() {
 
         // 发送资金费率异常
         if (fundingAlertMessages.length > 0) {
-            const fundingMessage = `💰 资金费率异常提醒 >0.1% <-0.1%\n\n${fundingAlertMessages.join('\n')}`;
+            const fundingMessage = `💰 资金费率异常提醒 >0.2% <-0.2%\n\n${fundingAlertMessages.join('\n')}`;
             console.log('\n检测到以下资金费率异常：');
             console.log('----------------------------------------');
             console.log(fundingMessage);
@@ -232,8 +232,8 @@ async function sendTelegramMessage(message) {
 
 // 修改定时任务
 function setupCronJobs() {
-    // 每天的03:50，07:50，11:50，15:50，19:50，23:50执行
-    cron.schedule('50 3,7,11,15,19,23 * * *', async () => {
+    // 每天的01:50，03:50，05:50，07:50，09:50，11:50，13:50，15:50，17:50，19:50，21:50，23:50执行
+    cron.schedule('50 1,3,5,7,9,11,13,15,17,19,21,23 * * *', async () => {
         console.log('开始定时任务...');
         await getMarketInfo();
     });

@@ -82,23 +82,6 @@ async function getOpenInterest(symbol) {
     }
 }
 
-// 获取多空持仓人数比
-async function getLongShortRatio(symbol) {
-    try {
-        const response = await axiosInstance.get(`${BINANCE_FAPI_BASE}/futures/data/globalLongShortAccountRatio`, {
-            params: { 
-                symbol,
-                period: '5m',
-                limit: 1
-            }
-        });
-        return response.data[0] ? parseFloat(response.data[0].longShortRatio) : null;
-    } catch (error) {
-        console.error(`获取${symbol}多空比数据失败:`, error.message);
-        return null;
-    }
-}
-
 // 添加获取K线数据的函数
 async function getKlineData(symbol) {
     try {
@@ -146,7 +129,6 @@ async function getMarketInfo() {
     try {
         let ratioAlertMessages = [];    // 持仓价值/交易量比率异常
         let fundingAlertMessages = [];   // 资金费率异常
-        let longShortAlertMessages = []; // 多空比异常
         let priceAlertMessages = [];     // 价格涨跌幅异常
         console.log('正在获取市场信息...\n');
 
@@ -167,8 +149,8 @@ async function getMarketInfo() {
         console.log('正在获取详细市场数据...\n');
 
         // 4. 打印表头
-        const tableHeader = '交易对         24h成交量    持仓价值      未平仓合约    多空比    费率      下次费率时间';
-        const tableDivider = '--------------------------------------------------------------------------------';
+        const tableHeader = '交易对         24h成交量    持仓价值      未平仓合约    费率      下次费率时间';
+        const tableDivider = '------------------------------------------------------------------------';
         console.log(tableHeader);
         console.log(tableDivider);
         
@@ -182,7 +164,6 @@ async function getMarketInfo() {
                 const symbolName = symbol.symbol;
                 const fundingInfo = await getFundingRate(symbolName);
                 const openInterest = await getOpenInterest(symbolName);
-                const longShortRatio = await getLongShortRatio(symbolName);
                 const klineData = await getKlineData(symbolName);
 
                 if (fundingInfo && openInterest) {
@@ -206,13 +187,6 @@ async function getMarketInfo() {
                         );
                     }
 
-                    // 检查多空比异常
-                    if (longShortRatio && (longShortRatio < 0.5 || longShortRatio > 3.5)) {
-                        longShortAlertMessages.push(
-                            `📊 ${symbolName} : ${longShortRatio.toFixed(2)}`
-                        );
-                    }
-
                     // 检查K线涨跌幅异常
                     if (klineData && Math.abs(klineData.priceChange) > 10) {
                         priceAlertMessages.push(
@@ -225,7 +199,6 @@ async function getMarketInfo() {
                         `${formatNumber(volume).padEnd(12)} ` +
                         `${formatNumber(marketValue).padEnd(12)} ` +
                         `${formatNumber(openInterest).padEnd(12)} ` +
-                        `${(longShortRatio ? longShortRatio.toFixed(2) : 'N/A').padEnd(9)} ` +
                         `${fundingRateValue.toFixed(4).padEnd(9)}% ` +
                         `${fundingInfo.nextFundingTime.toLocaleTimeString()}`;
 
@@ -260,16 +233,6 @@ async function getMarketInfo() {
             await sendTelegramMessage(fundingMessage);
         }
 
-        // 发送多空比异常
-        if (longShortAlertMessages.length > 0) {
-            const longShortMessage = `📊 多空比异常提醒 <0.5 >3.5\n\n${longShortAlertMessages.join('\n')}`;
-            console.log('\n检测到以下多空比异常：');
-            console.log('----------------------------------------');
-            console.log(longShortMessage);
-            console.log('----------------------------------------\n');
-            await sendTelegramMessage(longShortMessage);
-        }
-
         // 发送价格涨跌幅异常
         if (priceAlertMessages.length > 0) {
             const priceMessage = `📈 价格剧烈波动提醒 >10%\n\n${priceAlertMessages.join('\n')}`;
@@ -292,7 +255,6 @@ async function sendTelegramMessage(message) {
         if (message.length > 4000) {
             if (message.includes('🚨 持仓价值/交易量比率异常提醒') || 
                 message.includes('💰 资金费率异常提醒') || 
-                message.includes('📊 多空比异常提醒') ||
                 message.includes('📈 价格剧烈波动提醒')) {
                 await bot.sendMessage(telegramConfig.chatId, message.slice(0, 4000));
             } else {

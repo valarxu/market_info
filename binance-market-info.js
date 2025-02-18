@@ -156,7 +156,7 @@ async function getMarketInfo() {
                     const fundingRateValue = fundingInfo.lastFundingRate * 100;
 
                     // 检查资金费率异常
-                    if (fundingRateValue > 0.2 || fundingRateValue < -0.2) {
+                    if (fundingRateValue > 0.5 || fundingRateValue < -0.5) {
                         // 提取币种名称，移除后缀
                         const coinName = symbolName.replace(/USDT$/, '');
                         fundingAlertMessages.push(
@@ -190,7 +190,7 @@ async function getMarketInfo() {
 
         // 发送资金费率异常
         if (fundingAlertMessages.length > 0) {
-            const fundingMessage = `💰 资金费率异常提醒 >0.2% <-0.2%\n\n${fundingAlertMessages.join('\n')}`;
+            const fundingMessage = `💰 资金费率异常提醒 >0.5% <-0.5%\n\n${fundingAlertMessages.join('\n')}`;
             console.log('\n检测到以下资金费率异常：');
             console.log('----------------------------------------');
             console.log(fundingMessage);

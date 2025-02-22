@@ -166,8 +166,10 @@ async function getMarketInfo() {
 
                     // 检查K线涨跌幅异常
                     if (klineData && Math.abs(klineData.priceChange) > 10) {
+                        // 提取币种名称，移除USDT后缀
+                        const coinName = symbolName.replace(/USDT$/, '');
                         priceAlertMessages.push(
-                            `📈 ${symbolName} 4小时k线: ${klineData.priceChange.toFixed(2)}% ` +
+                            `📈 ${coinName} 4小时k线: ${klineData.priceChange.toFixed(2)}% ` +
                             `(开盘: ${klineData.openPrice.toFixed(4)}, 当前: ${klineData.closePrice.toFixed(4)})`
                         );
                     }

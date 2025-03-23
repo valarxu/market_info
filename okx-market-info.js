@@ -157,8 +157,8 @@ async function getMarketInfo() {
 
 // 设置定时任务
 function setupCronJobs() {
-    // 每天的01:50，03:50，05:50，07:50，09:50，11:50，13:50，15:50，17:50，19:50，21:50，23:50执行
-    cron.schedule('50 1,3,5,7,9,11,13,15,17,19,21,23 * * *', async () => {
+    // 每天的03:50，07:50，11:50，15:50，19:50，23:50执行
+    cron.schedule('50 3,7,11,15,19,23 * * *', async () => {
         console.log('开始OKX资金费率监控任务...');
         await getMarketInfo();
     });

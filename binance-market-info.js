@@ -69,27 +69,54 @@ async function getFundingRate(symbol) {
     }
 }
 
-// 添加获取K线数据的函数
+// 添加获取K线数据的函数 - 获取日线数据，limit为241
 async function getKlineData(symbol) {
     try {
         const response = await axiosInstance.get(`${BINANCE_FAPI_BASE}/fapi/v1/klines`, {
             params: {
                 symbol: symbol,
-                interval: '4h',
-                limit: 1
+                interval: '1d',
+                limit: 241
             }
         });
         
         if (response.data && response.data.length > 0) {
-            const kline = response.data[0];
-            const openPrice = parseFloat(kline[1]);
-            const closePrice = parseFloat(kline[4]);
-            const priceChange = ((closePrice - openPrice) / openPrice) * 100;
+            // 提取所有K线数据
+            const klines = response.data.map(kline => ({
+                openTime: kline[0],
+                open: parseFloat(kline[1]),
+                high: parseFloat(kline[2]),
+                low: parseFloat(kline[3]),
+                close: parseFloat(kline[4]),
+                volume: parseFloat(kline[5]),
+                closeTime: kline[6]
+            }));
+            
+            // 计算最新K线的涨跌幅
+            const latestKline = klines[klines.length - 1];
+            const priceChange = ((latestKline.close - latestKline.open) / latestKline.open) * 100;
+            
+            // 提取收盘价、最高价和最低价数组用于计算指标
+            const closePrices = klines.map(k => k.close);
+            const highPrices = klines.map(k => k.high);
+            const lowPrices = klines.map(k => k.low);
+            
+            // 计算EMA120和ATR14
+            const ema120 = calculateEMA(closePrices, 120);
+            const atr14 = calculateATR(highPrices, lowPrices, closePrices, 14);
+            
+            // 计算收盘价与EMA120的差距与ATR14的比值
+            const latestClose = closePrices[closePrices.length - 1];
+            const priceDiff = Math.abs(latestClose - ema120);
+            const atrRatio = priceDiff / atr14;
             
             return {
+                klines,
                 priceChange,
-                openPrice,
-                closePrice
+                latestClose,
+                ema120,
+                atr14,
+                atrRatio
             };
         }
         return null;
@@ -97,6 +124,51 @@ async function getKlineData(symbol) {
         console.error(`获取${symbol} K线数据失败:`, error.message);
         return null;
     }
+}
+
+// 计算EMA
+function calculateEMA(data, period) {
+    if (data.length < period) {
+        throw new Error('数据长度不足以计算EMA');
+    }
+    
+    let ema = data.slice(0, period).reduce((sum, price) => sum + price, 0) / period;
+    const multiplier = 2 / (period + 1);
+    
+    for (let i = period; i < data.length; i++) {
+        ema = (data[i] - ema) * multiplier + ema;
+    }
+    
+    return ema;
+}
+
+// 计算ATR
+function calculateATR(highs, lows, closingPrices, period) {
+    if (highs.length < period + 1 || lows.length < period + 1 || closingPrices.length < period + 1) {
+        throw new Error('数据长度不足以计算ATR');
+    }
+
+    const trValues = [];
+    for (let i = 1; i < closingPrices.length; i++) {
+        const high = highs[i];
+        const low = lows[i];
+        const prevClose = closingPrices[i - 1];
+        
+        const tr = Math.max(
+            high - low,
+            Math.abs(high - prevClose),
+            Math.abs(low - prevClose)
+        );
+        trValues.push(tr);
+    }
+
+    let atr = trValues.slice(0, period).reduce((sum, tr) => sum + tr, 0) / period;
+    
+    for (let i = period; i < trValues.length; i++) {
+        atr = ((period - 1) * atr + trValues[i]) / period;
+    }
+    
+    return atr;
 }
 
 // 格式化数字
@@ -114,8 +186,7 @@ function formatNumber(num, decimals = 2) {
 // 主函数
 async function getMarketInfo() {
     try {
-        let fundingAlertMessages = [];   // 资金费率异常
-        let priceAlertMessages = [];     // 价格涨跌幅异常
+        let technicalAlertMessages = [];   // 技术指标监控消息
         console.log('正在获取市场信息...\n');
 
         // 1. 获取所有活跃合约
@@ -135,8 +206,8 @@ async function getMarketInfo() {
         console.log('正在获取详细市场数据...\n');
 
         // 4. 打印表头
-        const tableHeader = '交易对         24h成交量    费率      下次费率时间';
-        const tableDivider = '--------------------------------------------------------';
+        const tableHeader = '交易对         24h成交量    收盘价    EMA120    ATR14    ATR倍数';
+        const tableDivider = '----------------------------------------------------------------';
         console.log(tableHeader);
         console.log(tableDivider);
         
@@ -148,36 +219,27 @@ async function getMarketInfo() {
             const batch = highVolumeSymbols.slice(i, i + batchSize);
             const promises = batch.map(async (symbol) => {
                 const symbolName = symbol.symbol;
-                const fundingInfo = await getFundingRate(symbolName);
                 const klineData = await getKlineData(symbolName);
 
-                if (fundingInfo) {
+                if (klineData) {
                     const volume = volume24h[symbolName];
-                    const fundingRateValue = fundingInfo.lastFundingRate * 100;
-
-                    // 检查资金费率异常
-                    if (fundingRateValue > 0.5 || fundingRateValue < -0.5) {
-                        // 提取币种名称，移除后缀
-                        const coinName = symbolName.replace(/USDT$/, '');
-                        fundingAlertMessages.push(
-                            `💰 ${coinName} : ${fundingRateValue.toFixed(2)}%`
-                        );
-                    }
-
-                    // 检查K线涨跌幅异常
-                    if (klineData && Math.abs(klineData.priceChange) > 10) {
-                        // 提取币种名称，移除USDT后缀
-                        const coinName = symbolName.replace(/USDT$/, '');
-                        priceAlertMessages.push(
-                            `📈 ${coinName} 4小时k线: ${klineData.priceChange.toFixed(2)}% ` +
-                            `(开盘: ${klineData.openPrice.toFixed(4)}, 当前: ${klineData.closePrice.toFixed(4)})`
-                        );
-                    }
+                    const coinName = symbolName.replace(/USDT$/, '');
+                    
+                    // 计算收盘价与EMA120的差距与ATR14的比值
+                    const atrRatioFormatted = klineData.atrRatio.toFixed(2);
+                    
+                    // 添加到监控消息
+                    technicalAlertMessages.push(
+                        `${coinName}: 涨跌幅 ${klineData.priceChange.toFixed(2)}%, ` +
+                        `ATR14的 ${atrRatioFormatted} 倍`
+                    );
 
                     const outputLine = `${symbolName.padEnd(14)} ` +
                         `${formatNumber(volume).padEnd(12)} ` +
-                        `${fundingRateValue.toFixed(4).padEnd(9)}% ` +
-                        `${fundingInfo.nextFundingTime.toLocaleTimeString()}`;
+                        `${klineData.latestClose.toFixed(4).padEnd(9)} ` +
+                        `${klineData.ema120.toFixed(4).padEnd(9)} ` +
+                        `${klineData.atr14.toFixed(4).padEnd(8)} ` +
+                        `${atrRatioFormatted}`;
 
                     console.log(outputLine);
                     outputText += outputLine + '\n';
@@ -190,24 +252,14 @@ async function getMarketInfo() {
             }
         }
 
-        // 发送资金费率异常
-        if (fundingAlertMessages.length > 0) {
-            const fundingMessage = `💰 资金费率异常提醒 >0.5% <-0.5%\n\n${fundingAlertMessages.join('\n')}`;
-            console.log('\n检测到以下资金费率异常：');
+        // 发送技术指标监控消息
+        if (technicalAlertMessages.length > 0) {
+            const technicalMessage = `📊 技术指标监控 - ${new Date().toLocaleDateString()}\n\n${technicalAlertMessages.join('\n')}`;
+            console.log('\n技术指标监控结果：');
             console.log('----------------------------------------');
-            console.log(fundingMessage);
+            console.log(technicalMessage);
             console.log('----------------------------------------\n');
-            await sendTelegramMessage(fundingMessage);
-        }
-
-        // 发送价格涨跌幅异常
-        if (priceAlertMessages.length > 0) {
-            const priceMessage = `📈 价格剧烈波动提醒 >10%\n\n${priceAlertMessages.join('\n')}`;
-            console.log('\n检测到以下价格异常：');
-            console.log('----------------------------------------');
-            console.log(priceMessage);
-            console.log('----------------------------------------\n');
-            await sendTelegramMessage(priceMessage);
+            await sendTelegramMessage(technicalMessage);
         }
 
     } catch (error) {
@@ -216,15 +268,22 @@ async function getMarketInfo() {
     }
 }
 
-// 修改发送Telegram消息的函数
+// 发送Telegram消息的函数
 async function sendTelegramMessage(message) {
     try {
-        if (message.length > 4000) {
-            if (message.includes('💰 资金费率异常提醒') || 
-                message.includes('📈 价格剧烈波动提醒')) {
-                await bot.sendMessage(telegramConfig.chatId, message.slice(0, 4000));
-            } else {
-                await bot.sendMessage(telegramConfig.chatId, message.slice(0, 4000));
+        // 如果消息长度超过3000字符，分割成多个消息发送
+        if (message.length > 3000) {
+            const messageChunks = [];
+            // 将消息分割成多个小于3000字符的块
+            for (let i = 0; i < message.length; i += 3000) {
+                messageChunks.push(message.slice(i, i + 3000));
+            }
+            
+            // 依次发送每个消息块
+            for (const chunk of messageChunks) {
+                await bot.sendMessage(telegramConfig.chatId, chunk);
+                // 添加短暂延迟，避免发送过快触发Telegram API限制
+                await sleep(100);
             }
         } else {
             await bot.sendMessage(telegramConfig.chatId, message);
@@ -234,10 +293,10 @@ async function sendTelegramMessage(message) {
     }
 }
 
-// 修改定时任务
+// 设置定时任务
 function setupCronJobs() {
-    // 每天的03:50，07:50，11:50，15:50，19:50，23:50执行
-    cron.schedule('50 3,7,11,15,19,23 * * *', async () => {
+    // 每天的07:50执行一次
+    cron.schedule('50 7 * * *', async () => {
         console.log('开始定时任务...');
         await getMarketInfo();
     });
@@ -248,4 +307,4 @@ console.log('启动币安合约市场监控程序...\n');
 setupCronJobs();
 getMarketInfo().then(() => {
     console.log('\n初始化数据获取完成！');
-}); 
+});

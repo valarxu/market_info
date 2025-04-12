@@ -107,8 +107,8 @@ async function getKlineData(symbol) {
             
             // 计算收盘价与EMA120的差距与ATR14的比值
             const latestClose = closePrices[closePrices.length - 1];
-            const priceDiff = Math.abs(latestClose - ema120);
-            const atrRatio = priceDiff / atr14;
+            const priceDiff = latestClose - ema120; // 移除Math.abs()，保留正负号
+            const atrRatio = priceDiff / atr14; // 正值表示价格在EMA120上方，负值表示价格在EMA120下方
             
             return {
                 klines,
@@ -206,7 +206,7 @@ async function getMarketInfo() {
         console.log('正在获取详细市场数据...\n');
 
         // 4. 打印表头
-        const tableHeader = '交易对         24h成交量    收盘价    EMA120    ATR14    ATR倍数';
+        const tableHeader = '交易对         24h成交量    收盘价    EMA120    ATR14    ATR倍数(±)';
         const tableDivider = '----------------------------------------------------------------';
         console.log(tableHeader);
         console.log(tableDivider);
@@ -229,17 +229,40 @@ async function getMarketInfo() {
                     const atrRatioFormatted = klineData.atrRatio.toFixed(2);
                     
                     // 添加到监控消息
+                    // 根据涨跌幅添加不同的emoji
+                    let priceChangeEmoji = '';
+                    const priceChangeValue = klineData.priceChange;
+                    
+                    // 根据涨跌幅正负添加基础emoji
+                    if (priceChangeValue > 0) {
+                        priceChangeEmoji = '🟢'; // 绿色emoji表示正涨幅
+                    } else {
+                        priceChangeEmoji = '🔴'; // 红色emoji表示负涨幅
+                    }
+                    
+                    // 根据涨跌幅大小添加额外emoji
+                    if (Math.abs(priceChangeValue) > 20) {
+                        priceChangeEmoji += '🔥🔥'; // 超过20%添加火焰emoji
+                    } else if (Math.abs(priceChangeValue) > 10) {
+                        priceChangeEmoji += '🔥'; // 超过10%添加警告emoji
+                    }
+                    
+                    // 添加方向指示，正值表示价格在EMA120上方，负值表示价格在EMA120下方
+                    const directionEmoji = klineData.atrRatio > 0 ? '👆' : '👇';
+                    
                     technicalAlertMessages.push(
-                        `${coinName}: 涨跌幅 ${klineData.priceChange.toFixed(2)}%, ` +
-                        `ATR14的 ${atrRatioFormatted} 倍`
+                        `${priceChangeEmoji} ${coinName}:  ${klineData.priceChange.toFixed(2)}%, ` +
+                        `${directionEmoji} 偏离 ${(klineData.atrRatio).toFixed(2)} 倍`
                     );
 
+                    // 添加方向符号到控制台输出
+                    const directionSign = klineData.atrRatio > 0 ? '+' : '-';
                     const outputLine = `${symbolName.padEnd(14)} ` +
                         `${formatNumber(volume).padEnd(12)} ` +
                         `${klineData.latestClose.toFixed(4).padEnd(9)} ` +
                         `${klineData.ema120.toFixed(4).padEnd(9)} ` +
                         `${klineData.atr14.toFixed(4).padEnd(8)} ` +
-                        `${atrRatioFormatted}`;
+                        `${directionSign}${Math.abs(klineData.atrRatio).toFixed(2)}`;
 
                     console.log(outputLine);
                     outputText += outputLine + '\n';

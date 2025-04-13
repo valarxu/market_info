@@ -71,6 +71,28 @@ async function getActiveSymbols() {
     }
 }
 
+// 获取24小时成交量数据
+async function get24hVolume() {
+    try {
+        const response = await axiosInstance.get('/api/v5/market/tickers', {
+            params: {
+                instType: 'SWAP'
+            }
+        });
+        const volumeMap = {};
+        response.data.data.forEach(ticker => {
+            if (ticker.instId.includes('USDT')) {
+                const volume = parseFloat(ticker.volCcy24h) * parseFloat(ticker.open24h);
+                volumeMap[ticker.instId] = volume;
+            }
+        });
+        return volumeMap;
+    } catch (error) {
+        console.error('获取24小时成交量数据失败:', error.message);
+        return {};
+    }
+}
+
 // 获取K线数据的函数 - 获取日线数据，limit为241
 async function getKlineData(instId) {
     try {
@@ -81,7 +103,7 @@ async function getKlineData(instId) {
                 limit: 241
             }
         });
-        
+
         if (response.data && response.data.data && response.data.data.length > 0) {
             // 提取所有K线数据，OKX API返回的数据格式：[时间戳, 开盘价, 最高价, 最低价, 收盘价, 交易量, 交易额]
             const klines = response.data.data.map(kline => ({
@@ -93,25 +115,25 @@ async function getKlineData(instId) {
                 volume: parseFloat(kline[5]),
                 quoteVolume: parseFloat(kline[6])
             })).reverse(); // OKX返回的是从新到旧，需要反转
-            
+
             // 计算最新K线的涨跌幅
             const latestKline = klines[klines.length - 1];
             const priceChange = ((latestKline.close - latestKline.open) / latestKline.open) * 100;
-            
+
             // 提取收盘价、最高价和最低价数组用于计算指标
             const closePrices = klines.map(k => k.close);
             const highPrices = klines.map(k => k.high);
             const lowPrices = klines.map(k => k.low);
-            
+
             // 计算EMA120和ATR14
             const ema120 = calculateEMA(closePrices, 120);
             const atr14 = calculateATR(highPrices, lowPrices, closePrices, 14);
-            
+
             // 计算收盘价与EMA120的差距与ATR14的比值
             const latestClose = closePrices[closePrices.length - 1];
             const priceDiff = latestClose - ema120; // 保留正负号
             const atrRatio = priceDiff / atr14; // 正值表示价格在EMA120上方，负值表示价格在EMA120下方
-            
+
             return {
                 klines,
                 priceChange,
@@ -133,14 +155,14 @@ function calculateEMA(data, period) {
     if (data.length < period) {
         throw new Error('数据长度不足以计算EMA');
     }
-    
+
     let ema = data.slice(0, period).reduce((sum, price) => sum + price, 0) / period;
     const multiplier = 2 / (period + 1);
-    
+
     for (let i = period; i < data.length; i++) {
         ema = (data[i] - ema) * multiplier + ema;
     }
-    
+
     return ema;
 }
 
@@ -155,7 +177,7 @@ function calculateATR(highs, lows, closingPrices, period) {
         const high = highs[i];
         const low = lows[i];
         const prevClose = closingPrices[i - 1];
-        
+
         const tr = Math.max(
             high - low,
             Math.abs(high - prevClose),
@@ -165,11 +187,11 @@ function calculateATR(highs, lows, closingPrices, period) {
     }
 
     let atr = trValues.slice(0, period).reduce((sum, tr) => sum + tr, 0) / period;
-    
+
     for (let i = period; i < trValues.length; i++) {
         atr = ((period - 1) * atr + trValues[i]) / period;
     }
-    
+
     return atr;
 }
 
@@ -195,7 +217,7 @@ async function sendTelegramMessage(message) {
             for (let i = 0; i < message.length; i += 3000) {
                 messageChunks.push(message.slice(i, i + 3000));
             }
-            
+
             // 依次发送每个消息块
             for (const chunk of messageChunks) {
                 await bot.sendMessage(telegramConfig.chatId, chunk);
@@ -220,13 +242,18 @@ async function getMarketInfo() {
         const activeSymbols = await getActiveSymbols();
         console.log(`获取到 ${activeSymbols.length} 个活跃合约\n`);
 
-        // 2. 筛选USDT永续合约，忽略USDC交易对
-        const usdtSwapSymbols = activeSymbols.filter(symbol => 
-            symbol.instId.endsWith('-USDT-SWAP') && 
-            !symbol.instId.includes('USDC')
-        );
+        // 2. 获取24小时成交量数据
+        const volume24h = await get24hVolume();
+        console.log('获取24小时成交量数据成功\n');
 
-        // 3. 获取24小时成交量数据
+        // 3. 筛选USDT永续合约，忽略USDC交易对，并且交易量大于50M
+        const usdtSwapSymbols = activeSymbols.filter(symbol =>
+            symbol.instId.endsWith('-USDT-SWAP') &&
+            !symbol.instId.includes('USDC') &&
+            (volume24h[symbol.instId] || 0) > 50000000 // 筛选交易量大于50M的交易对
+        ).sort((a, b) => (volume24h[b.instId] || 0) - (volume24h[a.instId] || 0)); // 按交易量从大到小排序
+
+        console.log(`找到 ${usdtSwapSymbols.length} 个交易量超过50M的合约\n`);
         console.log('正在获取详细市场数据...\n');
 
         // 4. 打印表头
@@ -234,7 +261,7 @@ async function getMarketInfo() {
         const tableDivider = '----------------------------------------------------------------';
         console.log(tableHeader);
         console.log(tableDivider);
-        
+
         let outputText = `${tableHeader}\n${tableDivider}\n`;
 
         // 5. 分批处理
@@ -248,35 +275,34 @@ async function getMarketInfo() {
                 if (klineData) {
                     // 提取币种名称，移除 -USDT-SWAP 后缀
                     const coinName = instId.replace(/-USDT-SWAP$/, '');
-                    
+
                     // 计算收盘价与EMA120的差距与ATR14的比值
                     const atrRatioFormatted = klineData.atrRatio.toFixed(2);
-                    
+
                     // 添加到监控消息
                     // 根据涨跌幅添加不同的emoji
                     let priceChangeEmoji = '';
                     const priceChangeValue = klineData.priceChange;
-                    
+
                     // 根据涨跌幅正负添加基础emoji
                     if (priceChangeValue > 0) {
                         priceChangeEmoji = '🟢'; // 绿色emoji表示正涨幅
                     } else {
                         priceChangeEmoji = '🔴'; // 红色emoji表示负涨幅
                     }
-                    
+
                     // 根据涨跌幅大小添加额外emoji
-                    if (Math.abs(priceChangeValue) > 20) {
-                        priceChangeEmoji += '🔥🔥'; // 超过20%添加火焰emoji
+                    if (Math.abs(priceChangeValue) > 30) {
+                        priceChangeEmoji += '🔥🔥🔥'; // 超过30%添加火焰emoji
+                    } else if (Math.abs(priceChangeValue) > 20) {
+                        priceChangeEmoji += '🔥🔥'; // 超过20%添加警告emoji
                     } else if (Math.abs(priceChangeValue) > 10) {
                         priceChangeEmoji += '🔥'; // 超过10%添加警告emoji
                     }
-                    
-                    // 添加方向指示，正值表示价格在EMA120上方，负值表示价格在EMA120下方
-                    const directionEmoji = klineData.atrRatio > 0 ? '👆' : '👇';
-                    
+
                     technicalAlertMessages.push(
                         `${priceChangeEmoji} ${coinName}:  ${klineData.priceChange.toFixed(2)}%, ` +
-                        `${directionEmoji} 偏离 ${(klineData.atrRatio).toFixed(2)} 倍`
+                        `偏离 ${(klineData.atrRatio).toFixed(2)} 倍`
                     );
 
                     // 添加方向符号到控制台输出

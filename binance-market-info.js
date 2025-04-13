@@ -27,8 +27,8 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 async function getActiveSymbols() {
     try {
         const response = await axiosInstance.get(`${BINANCE_FAPI_BASE}/fapi/v1/exchangeInfo`);
-        return response.data.symbols.filter(symbol => 
-            symbol.status === 'TRADING' && 
+        return response.data.symbols.filter(symbol =>
+            symbol.status === 'TRADING' &&
             symbol.contractType === 'PERPETUAL'
         );
     } catch (error) {
@@ -79,7 +79,7 @@ async function getKlineData(symbol) {
                 limit: 241
             }
         });
-        
+
         if (response.data && response.data.length > 0) {
             // 提取所有K线数据
             const klines = response.data.map(kline => ({
@@ -91,25 +91,25 @@ async function getKlineData(symbol) {
                 volume: parseFloat(kline[5]),
                 closeTime: kline[6]
             }));
-            
+
             // 计算最新K线的涨跌幅
             const latestKline = klines[klines.length - 1];
             const priceChange = ((latestKline.close - latestKline.open) / latestKline.open) * 100;
-            
+
             // 提取收盘价、最高价和最低价数组用于计算指标
             const closePrices = klines.map(k => k.close);
             const highPrices = klines.map(k => k.high);
             const lowPrices = klines.map(k => k.low);
-            
+
             // 计算EMA120和ATR14
             const ema120 = calculateEMA(closePrices, 120);
             const atr14 = calculateATR(highPrices, lowPrices, closePrices, 14);
-            
+
             // 计算收盘价与EMA120的差距与ATR14的比值
             const latestClose = closePrices[closePrices.length - 1];
             const priceDiff = latestClose - ema120; // 移除Math.abs()，保留正负号
             const atrRatio = priceDiff / atr14; // 正值表示价格在EMA120上方，负值表示价格在EMA120下方
-            
+
             return {
                 klines,
                 priceChange,
@@ -131,14 +131,14 @@ function calculateEMA(data, period) {
     if (data.length < period) {
         throw new Error('数据长度不足以计算EMA');
     }
-    
+
     let ema = data.slice(0, period).reduce((sum, price) => sum + price, 0) / period;
     const multiplier = 2 / (period + 1);
-    
+
     for (let i = period; i < data.length; i++) {
         ema = (data[i] - ema) * multiplier + ema;
     }
-    
+
     return ema;
 }
 
@@ -153,7 +153,7 @@ function calculateATR(highs, lows, closingPrices, period) {
         const high = highs[i];
         const low = lows[i];
         const prevClose = closingPrices[i - 1];
-        
+
         const tr = Math.max(
             high - low,
             Math.abs(high - prevClose),
@@ -163,11 +163,11 @@ function calculateATR(highs, lows, closingPrices, period) {
     }
 
     let atr = trValues.slice(0, period).reduce((sum, tr) => sum + tr, 0) / period;
-    
+
     for (let i = period; i < trValues.length; i++) {
         atr = ((period - 1) * atr + trValues[i]) / period;
     }
-    
+
     return atr;
 }
 
@@ -197,8 +197,8 @@ async function getMarketInfo() {
         const volume24h = await get24hVolume();
 
         // 3. 筛选交易量大于100M的交易对，忽略USDC交易对
-        const highVolumeSymbols = activeSymbols.filter(symbol => 
-            (volume24h[symbol.symbol] || 0) > 100000000 && 
+        const highVolumeSymbols = activeSymbols.filter(symbol =>
+            (volume24h[symbol.symbol] || 0) > 100000000 &&
             !symbol.symbol.includes('USDC')  // 添加这个条件来忽略USDC交易对
         ).sort((a, b) => (volume24h[b.symbol] || 0) - (volume24h[a.symbol] || 0));
 
@@ -210,7 +210,7 @@ async function getMarketInfo() {
         const tableDivider = '----------------------------------------------------------------';
         console.log(tableHeader);
         console.log(tableDivider);
-        
+
         let outputText = `${tableHeader}\n${tableDivider}\n`;
 
         // 5. 分批处理
@@ -224,35 +224,34 @@ async function getMarketInfo() {
                 if (klineData) {
                     const volume = volume24h[symbolName];
                     const coinName = symbolName.replace(/USDT$/, '');
-                    
+
                     // 计算收盘价与EMA120的差距与ATR14的比值
                     const atrRatioFormatted = klineData.atrRatio.toFixed(2);
-                    
+
                     // 添加到监控消息
                     // 根据涨跌幅添加不同的emoji
                     let priceChangeEmoji = '';
                     const priceChangeValue = klineData.priceChange;
-                    
+
                     // 根据涨跌幅正负添加基础emoji
                     if (priceChangeValue > 0) {
                         priceChangeEmoji = '🟢'; // 绿色emoji表示正涨幅
                     } else {
                         priceChangeEmoji = '🔴'; // 红色emoji表示负涨幅
                     }
-                    
+
                     // 根据涨跌幅大小添加额外emoji
-                    if (Math.abs(priceChangeValue) > 20) {
-                        priceChangeEmoji += '🔥🔥'; // 超过20%添加火焰emoji
+                    if (Math.abs(priceChangeValue) > 30) {
+                        priceChangeEmoji += '🔥🔥🔥'; // 超过30%添加火焰emoji
+                    } else if (Math.abs(priceChangeValue) > 20) {
+                        priceChangeEmoji += '🔥🔥'; // 超过20%添加警告emoji
                     } else if (Math.abs(priceChangeValue) > 10) {
                         priceChangeEmoji += '🔥'; // 超过10%添加警告emoji
                     }
-                    
-                    // 添加方向指示，正值表示价格在EMA120上方，负值表示价格在EMA120下方
-                    const directionEmoji = klineData.atrRatio > 0 ? '👆' : '👇';
-                    
+
                     technicalAlertMessages.push(
                         `${priceChangeEmoji} ${coinName}:  ${klineData.priceChange.toFixed(2)}%, ` +
-                        `${directionEmoji} 偏离 ${(klineData.atrRatio).toFixed(2)} 倍`
+                        `偏离 ${(klineData.atrRatio).toFixed(2)} 倍`
                     );
 
                     // 添加方向符号到控制台输出
@@ -301,7 +300,7 @@ async function sendTelegramMessage(message) {
             for (let i = 0; i < message.length; i += 3000) {
                 messageChunks.push(message.slice(i, i + 3000));
             }
-            
+
             // 依次发送每个消息块
             for (const chunk of messageChunks) {
                 await bot.sendMessage(telegramConfig.chatId, chunk);

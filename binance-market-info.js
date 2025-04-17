@@ -69,13 +69,13 @@ async function getFundingRate(symbol) {
     }
 }
 
-// 添加获取K线数据的函数 - 获取日线数据，limit为241
-async function getKlineData(symbol) {
+// 添加获取K线数据的函数 - 根据传入的interval参数获取不同周期的K线数据
+async function getKlineData(symbol, interval = '1d') {
     try {
         const response = await axiosInstance.get(`${BINANCE_FAPI_BASE}/fapi/v1/klines`, {
             params: {
                 symbol: symbol,
-                interval: '1d',
+                interval: interval,
                 limit: 241
             }
         });
@@ -184,7 +184,7 @@ function formatNumber(num, decimals = 2) {
 }
 
 // 主函数
-async function getMarketInfo() {
+async function getMarketInfo(interval = '1d') {
     try {
         let technicalAlertMessages = [];   // 技术指标监控消息
         console.log('正在获取市场信息...\n');
@@ -219,7 +219,7 @@ async function getMarketInfo() {
             const batch = highVolumeSymbols.slice(i, i + batchSize);
             const promises = batch.map(async (symbol) => {
                 const symbolName = symbol.symbol;
-                const klineData = await getKlineData(symbolName);
+                const klineData = await getKlineData(symbolName, interval);
 
                 if (klineData) {
                     const volume = volume24h[symbolName];
@@ -276,8 +276,10 @@ async function getMarketInfo() {
 
         // 发送技术指标监控消息
         if (technicalAlertMessages.length > 0) {
-            const technicalMessage = `📊 技术指标监控 - ${new Date().toLocaleDateString()}\n\n${technicalAlertMessages.join('\n')}`;
-            console.log('\n技术指标监控结果：');
+            // 根据interval添加不同的标题
+            const timeframeText = interval === '1d' ? '日线' : '4小时线';
+            const technicalMessage = `📊 币安${timeframeText}技术指标监控 - ${new Date().toLocaleDateString()}\n\n${technicalAlertMessages.join('\n')}`;
+            console.log(`\n币安${timeframeText}技术指标监控结果：`);
             console.log('----------------------------------------');
             console.log(technicalMessage);
             console.log('----------------------------------------\n');
@@ -317,10 +319,16 @@ async function sendTelegramMessage(message) {
 
 // 设置定时任务
 function setupCronJobs() {
-    // 每天的07:50执行一次
+    // 每天的07:50执行一次，获取日线数据
     cron.schedule('50 7 * * *', async () => {
-        console.log('开始定时任务...');
-        await getMarketInfo();
+        console.log('开始币安日线数据定时任务...');
+        await getMarketInfo('1d');
+    });
+    
+    // 每天的19:50执行一次，获取4小时线数据
+    cron.schedule('50 19 * * *', async () => {
+        console.log('开始币安4小时线数据定时任务...');
+        await getMarketInfo('4h');
     });
 }
 

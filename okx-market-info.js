@@ -93,13 +93,13 @@ async function get24hVolume() {
     }
 }
 
-// 获取K线数据的函数 - 获取日线数据，limit为241
-async function getKlineData(instId) {
+// 获取K线数据的函数 - 获取K线数据，limit为241
+async function getKlineData(instId, bar = '1D') {
     try {
         const response = await axiosInstance.get('/api/v5/market/candles', {
             params: {
                 instId: instId,
-                bar: '1D',
+                bar: bar,
                 limit: 241
             }
         });
@@ -233,7 +233,9 @@ async function sendTelegramMessage(message) {
 }
 
 // 主函数
-async function getMarketInfo() {
+async function getMarketInfo(bar = '1D') {
+    // 确定时间周期名称
+    const barName = bar === '1D' ? '日线' : bar === '4H' ? '4小时线' : bar;
     try {
         let technicalAlertMessages = [];   // 技术指标监控消息
         console.log('正在获取OKX市场信息...\n');
@@ -270,7 +272,7 @@ async function getMarketInfo() {
             const batch = usdtSwapSymbols.slice(i, i + batchSize);
             const promises = batch.map(async (symbol) => {
                 const instId = symbol.instId;
-                const klineData = await getKlineData(instId);
+                const klineData = await getKlineData(instId, bar);
 
                 if (klineData) {
                     // 提取币种名称，移除 -USDT-SWAP 后缀
@@ -327,7 +329,7 @@ async function getMarketInfo() {
 
         // 发送技术指标监控消息
         if (technicalAlertMessages.length > 0) {
-            const technicalMessage = `📊 OKX技术指标监控 - ${new Date().toLocaleDateString()}\n\n${technicalAlertMessages.join('\n')}`;
+            const technicalMessage = `📊 OKX${barName}技术指标监控 - ${new Date().toLocaleDateString()}\n\n${technicalAlertMessages.join('\n')}`;
             console.log('\n技术指标监控结果：');
             console.log('----------------------------------------');
             console.log(technicalMessage);
@@ -343,16 +345,22 @@ async function getMarketInfo() {
 
 // 设置定时任务
 function setupCronJobs() {
-    // 每天的07:50执行一次
+    // 每天的07:50执行日线数据监控
     cron.schedule('50 7 * * *', async () => {
-        console.log('开始OKX技术指标监控任务...');
-        await getMarketInfo();
+        console.log('开始OKX日线技术指标监控任务...');
+        await getMarketInfo('1D');
+    });
+    
+    // 每天的19:50执行4小时线数据监控
+    cron.schedule('50 19 * * *', async () => {
+        console.log('开始OKX4小时线技术指标监控任务...');
+        await getMarketInfo('4H');
     });
 }
 
 // 程序入口
 console.log('启动OKX市场监控程序...\n');
 setupCronJobs();
-getMarketInfo().then(() => {
-    console.log('\n初始化数据获取完成！');
+getMarketInfo('1D').then(() => {
+    console.log('\n初始化日线数据获取完成！');
 });
